@@ -12,7 +12,7 @@ from PySide6.QtGui import QDragEnterEvent, QDropEvent, QDesktopServices
 from converter_engine import convert_materials_to_pdf
 
 class DropZoneWidget(QFrame):
-    """Custom Drag and Drop zone without emojis."""
+    """Custom Drag and Drop zone."""
     files_dropped = Signal(str)
 
     def __init__(self, parent=None):
@@ -87,7 +87,7 @@ class WorkerThread(QThread):
             self.conversion_failed.emit(str(e))
 
 class ReviewerConverterWindow(QMainWindow):
-    """Main Application Window without emojis."""
+    """Main Application Window."""
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Lesson-to-Reviewer Converter")
