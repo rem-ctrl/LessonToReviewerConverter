@@ -12,41 +12,37 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen import canvas
 
 PAGE_WIDTH, PAGE_HEIGHT = letter
-MARGIN = 36   # Standard 0.5 inch margin
-GAP = 18      # Gap between columns
-COL_WIDTH = (PAGE_WIDTH - (MARGIN * 2) - GAP) / 2  # ~261 pt per column
+MARGIN = 36
+GAP = 18
+COL_WIDTH = (PAGE_WIDTH - (MARGIN * 2) - GAP) / 2
 
-COLOR_PURPLE = colors.HexColor('#990099')  # Heading 1
-COLOR_GREEN = colors.HexColor('#008000')   # Heading 2
-COLOR_RED_QUOTE = colors.HexColor('#8B0000') # Quotes
+COLOR_PURPLE = colors.HexColor('#990099')
+COLOR_GREEN = colors.HexColor('#008000')
+COLOR_RED_QUOTE = colors.HexColor('#8B0000')
 COLOR_TEXT = colors.HexColor('#111111')
 
 class CleanCanvas(canvas.Canvas):
-    """Canvas without headers, footers, page numbers, or horizontal lines."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
 def dynamic_highlight(text):
-    """Highlights key dates, laws, proper nouns, definitions, and exam warnings in yellow and red tags."""
+    """Highlights dates, legislation, proper nouns, and warnings."""
     if not text or len(text.strip()) == 0:
         return text
 
-    # Red Highlights for Warning/Trap/Pitfall keywords
     red_pattern = r'\b(EXAM TRAP|WARNING|CAUTION|IMPORTANT|LIMITATION|PITFALL|CRITICAL|NOTE|EXAM TIP|KEY PITFALL)\b'
     text = re.sub(red_pattern, r'<font backColor="#FF0000" color="white"><b>\g<0></b></font>', text, flags=re.IGNORECASE)
 
-    # Yellow Highlights for Dates
     date_pattern = r'\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:,\s+\d{4})?|\d{1,2}/\d{1,2}/\d{2,4}|\d{4}s?|\d{1,2}(?:st|nd|rd|th)\s+[Cc]entury)\b'
     text = re.sub(date_pattern, r'<font backColor="#FFFF00"><b>\g<0></b></font>', text)
 
-    # Yellow Highlights for Laws, Acts, RAs, Codes
     law_pattern = r'\b(Republic Act\s+(?:No\.\s*)?\d+|RA\s+\d+|Article\s+\d+|Section\s+\d+)\b'
     text = re.sub(law_pattern, r'<font backColor="#FFFF00"><b>\g<0></b></font>', text, flags=re.IGNORECASE)
 
     return text
 
 def parse_pptx_file(filepath):
-    """Extracts raw text from PowerPoint presentation."""
+    """Parses text content from PowerPoint presentation slides."""
     lines = []
     try:
         prs = Presentation(filepath)
@@ -67,7 +63,7 @@ def parse_pptx_file(filepath):
     return lines
 
 def parse_pdf_file(filepath):
-    """Extracts raw text from PDF document."""
+    """Parses text content from PDF pages."""
     lines = []
     try:
         reader = PdfReader(filepath)
@@ -83,7 +79,7 @@ def parse_pdf_file(filepath):
     return lines
 
 def build_pedagogical_modules(files_to_process, progress_callback=None, log_callback=None):
-    """Synthesizes raw content into high-yield educational study modules with objectives, syntheses, traps, and quizzes."""
+    """Groups extracted content into study modules with objectives, key terms, and practice questions."""
     total_files = len(files_to_process)
     extracted_data = []
 
@@ -102,18 +98,15 @@ def build_pedagogical_modules(files_to_process, progress_callback=None, log_call
         if progress_callback:
             progress_callback(int(((idx + 1) / total_files) * 40))
 
-    # Synthesize content into structured modules
     structured_modules = []
 
     for mod_idx, (topic_name, lines) in enumerate(extracted_data):
         if not lines:
             continue
 
-        # Extract titles, key phrases, and terms
         titles = [l.replace("TITLE: ", "") for l in lines if l.startswith("TITLE: ")]
         body_lines = [l for l in lines if not l.startswith("TITLE: ")]
 
-        # Group body lines into coherent concept blocks
         concept_blocks = []
         current_block = []
         for line in body_lines:
@@ -124,7 +117,6 @@ def build_pedagogical_modules(files_to_process, progress_callback=None, log_call
         if current_block:
             concept_blocks.append(" ".join(current_block))
 
-        # Generate Active Recall Practice Questions from key facts
         recall_questions = []
         key_terms = []
         for block in concept_blocks:
@@ -145,7 +137,7 @@ def build_pedagogical_modules(files_to_process, progress_callback=None, log_call
                 f"Distinguish critical exam traps, common misconceptions, and comparative definitions."
             ],
             'subtopics': titles if titles else ["Core Concepts & Syntheses"],
-            'concept_blocks': concept_blocks[:8],  # Selected top high-yield synthesis blocks
+            'concept_blocks': concept_blocks[:8],
             'key_terms': key_terms[:6],
             'recall_questions': recall_questions[:4]
         }
@@ -154,7 +146,7 @@ def build_pedagogical_modules(files_to_process, progress_callback=None, log_call
     return structured_modules
 
 def convert_materials_to_pdf(input_path, output_pdf_path, progress_callback=None, log_callback=None):
-    """Generates a high-yield, structured 2-column Exam Reviewer PDF for ANY subject."""
+    """Generates a 2-column Exam Reviewer PDF from input materials."""
     if log_callback:
         log_callback(f"Scanning materials in: {input_path}")
 
@@ -170,11 +162,10 @@ def convert_materials_to_pdf(input_path, output_pdf_path, progress_callback=None
     if not files_to_process:
         raise ValueError("No PowerPoint (.pptx) or PDF (.pdf) files found in selected location.")
 
-    # Build Pedagogical Modules
     modules = build_pedagogical_modules(files_to_process, progress_callback, log_callback)
 
     if log_callback:
-        log_callback("Formatting high-yield exam reviewer layout and comparative matrices...")
+        log_callback("Formatting exam reviewer layout...")
 
     course_title = os.path.basename(os.path.normpath(input_path)).replace('_', ' ').replace('-', ' ').title()
     if not course_title or course_title.lower() == 'downloads':
@@ -182,7 +173,6 @@ def convert_materials_to_pdf(input_path, output_pdf_path, progress_callback=None
     else:
         course_title = f"{course_title} — Midterm Exam Reviewer"
 
-    # ReportLab Document setup
     doc = BaseDocTemplate(
         output_pdf_path,
         pagesize=letter,
@@ -273,24 +263,20 @@ def convert_materials_to_pdf(input_path, output_pdf_path, progress_callback=None
 
     story = []
 
-    # Main Document Header Title
     story.append(Paragraph(course_title, h1_style))
     story.append(Spacer(1, 4))
 
     for mod in modules:
         story.append(Paragraph(mod['title'], h1_style))
 
-        # Section: Learning Objectives
         story.append(Paragraph("Exam Learning Objectives", h2_style))
         for obj in mod['objectives']:
             story.append(Paragraph(f"• {dynamic_highlight(obj)}", bullet_style))
 
-        # Section: High-Yield Topic Syntheses
         story.append(Paragraph("High-Yield Concept Syntheses & Notes", h2_style))
         for block in mod['concept_blocks']:
             story.append(Paragraph(dynamic_highlight(block), body_style))
 
-        # Section: Key Vocabulary / Terminology Table if terms exist
         if mod['key_terms']:
             story.append(Paragraph("Key Terminology & Definitions", h2_style))
             table_data = [[Paragraph("Term", table_header_style), Paragraph("Definition / High-Yield Note", table_header_style)]]
@@ -310,7 +296,6 @@ def convert_materials_to_pdf(input_path, output_pdf_path, progress_callback=None
             story.append(t_terms)
             story.append(Spacer(1, 4))
 
-        # Section: Active Recall & Self-Test Questions
         if mod['recall_questions']:
             story.append(Paragraph("Active Recall & Self-Test Questions", h2_style))
             for q_num, (q_text, a_text) in enumerate(mod['recall_questions'], 1):
