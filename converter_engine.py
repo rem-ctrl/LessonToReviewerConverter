@@ -41,6 +41,48 @@ def dynamic_highlight(text):
 
     return text
 
+def extract_true_lesson_title(filepath):
+    """Extracts the true inner lesson title from presentation title slide or document header, stripping generic copy numbers."""
+    title_candidate = ""
+    
+    if filepath.lower().endswith('.pptx'):
+        try:
+            prs = Presentation(filepath)
+            if len(prs.slides) > 0 and prs.slides[0].shapes.title:
+                t = prs.slides[0].shapes.title.text.strip()
+                t_clean = " ".join(t.split())
+                if len(t_clean) > 3 and not re.match(r'^(slide|untitled|presentation|\d+)$', t_clean, re.IGNORECASE):
+                    title_candidate = t_clean
+        except Exception:
+            pass
+
+    elif filepath.lower().endswith('.pdf'):
+        try:
+            reader = PdfReader(filepath)
+            if len(reader.pages) > 0:
+                txt = reader.pages[0].extract_text()
+                if txt:
+                    lines = [l.strip() for l in txt.split('\n') if l.strip()]
+                    for l in lines[:4]:
+                        l_clean = " ".join(l.split())
+                        if len(l_clean) > 4 and not re.match(r'^(page|table of contents|index|slide|\d+)$', l_clean, re.IGNORECASE):
+                            title_candidate = l_clean
+                            break
+        except Exception:
+            pass
+
+    if not title_candidate:
+        fname = os.path.basename(filepath)
+        clean_name = os.path.splitext(fname)[0]
+        clean_name = re.sub(r'\s*\(\d+\)$', '', clean_name, flags=re.IGNORECASE)
+        clean_name = re.sub(r'[-_]+', ' ', clean_name).strip()
+        title_candidate = clean_name
+
+    # Remove generic numbering prefixes
+    title_candidate = re.sub(r'^(Topic\s*\d+|Week\s*\d+|\d+[a-z]?)\s*[:.\-]\s*', '', title_candidate, flags=re.IGNORECASE)
+
+    return title_candidate
+
 def parse_pptx_file(filepath):
     """Parses text content from PowerPoint presentation slides."""
     lines = []
@@ -79,22 +121,22 @@ def parse_pdf_file(filepath):
     return lines
 
 def build_pedagogical_modules(files_to_process, progress_callback=None, log_callback=None):
-    """Groups extracted content into study modules with objectives, key terms, and practice questions."""
+    """Groups extracted content into study modules using true lesson titles extracted from title slides."""
     total_files = len(files_to_process)
     extracted_data = []
 
     for idx, filepath in enumerate(files_to_process):
         fname = os.path.basename(filepath)
-        clean_name = os.path.splitext(fname)[0].replace('_', ' ')
+        lesson_title = extract_true_lesson_title(filepath)
         if log_callback:
-            log_callback(f"Extracting [{idx+1}/{total_files}]: {fname}")
+            log_callback(f"Extracting [{idx+1}/{total_files}]: {lesson_title}")
 
         if filepath.lower().endswith('.pptx'):
             lines = parse_pptx_file(filepath)
         else:
             lines = parse_pdf_file(filepath)
 
-        extracted_data.append((clean_name, lines))
+        extracted_data.append((lesson_title, lines))
         if progress_callback:
             progress_callback(int(((idx + 1) / total_files) * 40))
 
@@ -132,9 +174,9 @@ def build_pedagogical_modules(files_to_process, progress_callback=None, log_call
             'module_num': mod_idx + 1,
             'title': f"{mod_idx+1}. {topic_name}",
             'objectives': [
-                f"Master core concepts and historical/theoretical context of {topic_name}.",
-                f"Identify key dates, names, legislation, and key principles for the midterm exam.",
-                f"Distinguish critical exam traps, common misconceptions, and comparative definitions."
+                f"Master core concepts and theoretical/practical context of {topic_name}.",
+                f"Identify key dates, names, terms, and principles for the midterm exam.",
+                f"Distinguish critical exam traps, common misconceptions, and definitions."
             ],
             'subtopics': titles if titles else ["Core Concepts & Syntheses"],
             'concept_blocks': concept_blocks[:8],
@@ -146,7 +188,7 @@ def build_pedagogical_modules(files_to_process, progress_callback=None, log_call
     return structured_modules
 
 def convert_materials_to_pdf(input_path, output_pdf_path, progress_callback=None, log_callback=None):
-    """Generates a 2-column Exam Reviewer PDF from input materials."""
+    """Generates a 2-column Exam Reviewer PDF from input materials using extracted lesson titles."""
     if log_callback:
         log_callback(f"Scanning materials in: {input_path}")
 
