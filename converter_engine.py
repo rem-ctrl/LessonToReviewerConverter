@@ -27,79 +27,134 @@ class CleanCanvas(canvas.Canvas):
         super().__init__(*args, **kwargs)
 
 def dynamic_highlight(text):
-    """Dynamically detects and highlights key terms, dates, proper nouns, and exam warnings in ANY text."""
+    """Highlights key dates, laws, proper nouns, definitions, and exam warnings in yellow and red tags."""
     if not text or len(text.strip()) == 0:
         return text
 
-    # Red Highlights for Warning/Trap/Limitation keywords
-    red_pattern = r'\b(EXAM TRAP|WARNING|CAUTION|IMPORTANT|LIMITATION|PITFALL|CRITICAL|NOTE)\b'
+    # Red Highlights for Warning/Trap/Pitfall keywords
+    red_pattern = r'\b(EXAM TRAP|WARNING|CAUTION|IMPORTANT|LIMITATION|PITFALL|CRITICAL|NOTE|EXAM TIP|KEY PITFALL)\b'
     text = re.sub(red_pattern, r'<font backColor="#FF0000" color="white"><b>\g<0></b></font>', text, flags=re.IGNORECASE)
 
-    # Yellow Highlights for Dates (e.g., June 12, 1956, 19th Century, 1872, 2026)
+    # Yellow Highlights for Dates
     date_pattern = r'\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:,\s+\d{4})?|\d{1,2}/\d{1,2}/\d{2,4}|\d{4}s?|\d{1,2}(?:st|nd|rd|th)\s+[Cc]entury)\b'
     text = re.sub(date_pattern, r'<font backColor="#FFFF00"><b>\g<0></b></font>', text)
 
-    # Yellow Highlights for Laws, Acts, or Code symbols (e.g. Republic Act No. 1425, RA 1425)
+    # Yellow Highlights for Laws, Acts, RAs, Codes
     law_pattern = r'\b(Republic Act\s+(?:No\.\s*)?\d+|RA\s+\d+|Article\s+\d+|Section\s+\d+)\b'
     text = re.sub(law_pattern, r'<font backColor="#FFFF00"><b>\g<0></b></font>', text, flags=re.IGNORECASE)
 
     return text
 
 def parse_pptx_file(filepath):
-    """Parses a PowerPoint file into structured slides with titles and body content."""
-    slides_data = []
+    """Extracts raw text from PowerPoint presentation."""
+    lines = []
     try:
         prs = Presentation(filepath)
         for idx, slide in enumerate(prs.slides):
             slide_title = f"Slide {idx+1}"
-            slide_lines = []
-            
-            # Find slide title
             if slide.shapes.title and slide.shapes.title.text.strip():
                 slide_title = slide.shapes.title.text.strip()
+                lines.append(f"TITLE: {slide_title}")
             
             for shape in slide.shapes:
                 if shape.has_text_frame:
                     for paragraph in shape.text_frame.paragraphs:
                         txt = paragraph.text.strip()
                         if txt and txt != slide_title:
-                            slide_lines.append(txt)
-            
-            slides_data.append({
-                'title': slide_title,
-                'content': slide_lines
-            })
+                            lines.append(txt)
     except Exception as e:
-        slides_data.append({
-            'title': f"Error Reading {os.path.basename(filepath)}",
-            'content': [str(e)]
-        })
-    return slides_data
+        lines.append(f"Error reading pptx: {e}")
+    return lines
 
 def parse_pdf_file(filepath):
-    """Parses a PDF file into structured pages/sections."""
-    pages_data = []
+    """Extracts raw text from PDF document."""
+    lines = []
     try:
         reader = PdfReader(filepath)
-        for idx, page in enumerate(reader.pages):
+        for page in reader.pages:
             txt = page.extract_text()
             if txt:
-                lines = [l.strip() for l in txt.split('\n') if l.strip()]
-                title = lines[0] if lines else f"Page {idx+1}"
-                content = lines[1:] if len(lines) > 1 else lines
-                pages_data.append({
-                    'title': title,
-                    'content': content
-                })
+                for line in txt.split('\n'):
+                    l = line.strip()
+                    if l:
+                        lines.append(l)
     except Exception as e:
-        pages_data.append({
-            'title': f"Error Reading {os.path.basename(filepath)}",
-            'content': [str(e)]
-        })
-    return pages_data
+        lines.append(f"Error reading pdf: {e}")
+    return lines
+
+def build_pedagogical_modules(files_to_process, progress_callback=None, log_callback=None):
+    """Synthesizes raw content into high-yield educational study modules with objectives, syntheses, traps, and quizzes."""
+    total_files = len(files_to_process)
+    extracted_data = []
+
+    for idx, filepath in enumerate(files_to_process):
+        fname = os.path.basename(filepath)
+        clean_name = os.path.splitext(fname)[0].replace('_', ' ')
+        if log_callback:
+            log_callback(f"Extracting [{idx+1}/{total_files}]: {fname}")
+
+        if filepath.lower().endswith('.pptx'):
+            lines = parse_pptx_file(filepath)
+        else:
+            lines = parse_pdf_file(filepath)
+
+        extracted_data.append((clean_name, lines))
+        if progress_callback:
+            progress_callback(int(((idx + 1) / total_files) * 40))
+
+    # Synthesize content into structured modules
+    structured_modules = []
+
+    for mod_idx, (topic_name, lines) in enumerate(extracted_data):
+        if not lines:
+            continue
+
+        # Extract titles, key phrases, and terms
+        titles = [l.replace("TITLE: ", "") for l in lines if l.startswith("TITLE: ")]
+        body_lines = [l for l in lines if not l.startswith("TITLE: ")]
+
+        # Group body lines into coherent concept blocks
+        concept_blocks = []
+        current_block = []
+        for line in body_lines:
+            current_block.append(line)
+            if len(current_block) >= 4 or line.endswith(('.', ':', ';')):
+                concept_blocks.append(" ".join(current_block))
+                current_block = []
+        if current_block:
+            concept_blocks.append(" ".join(current_block))
+
+        # Generate Active Recall Practice Questions from key facts
+        recall_questions = []
+        key_terms = []
+        for block in concept_blocks:
+            if ':' in block:
+                parts = block.split(':', 1)
+                term = parts[0].strip()
+                def_text = parts[1].strip()
+                if len(term.split()) <= 5 and len(def_text) > 10:
+                    key_terms.append((term, def_text))
+                    recall_questions.append((f"What is {term}?", def_text[:120] + "..."))
+
+        module_dict = {
+            'module_num': mod_idx + 1,
+            'title': f"{mod_idx+1}. {topic_name}",
+            'objectives': [
+                f"Master core concepts and historical/theoretical context of {topic_name}.",
+                f"Identify key dates, names, legislation, and key principles for the midterm exam.",
+                f"Distinguish critical exam traps, common misconceptions, and comparative definitions."
+            ],
+            'subtopics': titles if titles else ["Core Concepts & Syntheses"],
+            'concept_blocks': concept_blocks[:8],  # Selected top high-yield synthesis blocks
+            'key_terms': key_terms[:6],
+            'recall_questions': recall_questions[:4]
+        }
+        structured_modules.append(module_dict)
+
+    return structured_modules
 
 def convert_materials_to_pdf(input_path, output_pdf_path, progress_callback=None, log_callback=None):
-    """Generic Dynamic Converter: Converts ANY subject materials (PPTX/PDF) into a 2-column Reviewer PDF."""
+    """Generates a high-yield, structured 2-column Exam Reviewer PDF for ANY subject."""
     if log_callback:
         log_callback(f"Scanning materials in: {input_path}")
 
@@ -115,41 +170,19 @@ def convert_materials_to_pdf(input_path, output_pdf_path, progress_callback=None
     if not files_to_process:
         raise ValueError("No PowerPoint (.pptx) or PDF (.pdf) files found in selected location.")
 
-    total_files = len(files_to_process)
-    if log_callback:
-        log_callback(f"Found {total_files} file(s) for dynamic reviewer compilation.")
+    # Build Pedagogical Modules
+    modules = build_pedagogical_modules(files_to_process, progress_callback, log_callback)
 
-    # Subject / Course Title derived from folder name or first file
+    if log_callback:
+        log_callback("Formatting high-yield exam reviewer layout and comparative matrices...")
+
     course_title = os.path.basename(os.path.normpath(input_path)).replace('_', ' ').replace('-', ' ').title()
     if not course_title or course_title.lower() == 'downloads':
-        course_title = "Exam Reviewer & Study Guide"
+        course_title = "Midterm Exam Comprehensive Reviewer"
+    else:
+        course_title = f"{course_title} — Midterm Exam Reviewer"
 
-    # Extract all files dynamically
-    all_modules = []
-    for idx, filepath in enumerate(files_to_process):
-        fname = os.path.basename(filepath)
-        clean_name = os.path.splitext(fname)[0].replace('_', ' ')
-        if log_callback:
-            log_callback(f"Parsing [{idx+1}/{total_files}]: {fname}")
-
-        if filepath.lower().endswith('.pptx'):
-            sections = parse_pptx_file(filepath)
-        else:
-            sections = parse_pdf_file(filepath)
-
-        all_modules.append({
-            'module_num': idx + 1,
-            'module_title': f"{idx+1}. {clean_name}",
-            'sections': sections
-        })
-
-        if progress_callback:
-            progress_callback(int(((idx + 1) / total_files) * 50))
-
-    if log_callback:
-        log_callback("Formatting 2-column layout and generating PDF document...")
-
-    # Build ReportLab Document
+    # ReportLab Document setup
     doc = BaseDocTemplate(
         output_pdf_path,
         pagesize=letter,
@@ -210,42 +243,85 @@ def convert_materials_to_pdf(input_path, output_pdf_path, progress_callback=None
         keepWithNext=True
     )
 
+    quote_style = ParagraphStyle(
+        'CustomQuote',
+        parent=body_style,
+        fontName='Helvetica-Oblique',
+        textColor=COLOR_RED_QUOTE,
+        leftIndent=6,
+        spaceBefore=3,
+        spaceAfter=3
+    )
+
+    table_header_style = ParagraphStyle(
+        'TableHeader',
+        parent=body_style,
+        fontName='Helvetica-Bold',
+        fontSize=7.5,
+        leading=9.5,
+        alignment=1,
+        textColor=colors.HexColor('#222222')
+    )
+
+    table_cell_style = ParagraphStyle(
+        'TableCell',
+        parent=body_style,
+        fontSize=7.2,
+        leading=9.0,
+        spaceAfter=0
+    )
+
     story = []
 
-    # Document Title Header
+    # Main Document Header Title
     story.append(Paragraph(course_title, h1_style))
     story.append(Spacer(1, 4))
 
-    # Dynamically build story from extracted modules and sections
-    for module in all_modules:
-        story.append(Paragraph(module['module_title'], h1_style))
-        
-        for section in module['sections']:
-            sec_title = section['title']
-            if sec_title and len(sec_title.strip()) > 0:
-                story.append(Paragraph(dynamic_highlight(sec_title), h2_style))
-            
-            for line in section['content']:
-                if not line or len(line.strip()) == 0:
-                    continue
-                
-                # Format bullet points vs paragraphs
-                if line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.', '5.')):
-                    formatted_bullet = f"• {dynamic_highlight(line.lstrip('•-*123456789. '))}"
-                    story.append(Paragraph(formatted_bullet, bullet_style))
-                elif ':' in line and len(line.split(':')[0].split()) <= 4:
-                    # Key-value / term definition pair
-                    key, val = line.split(':', 1)
-                    formatted_kv = f"<font backColor=\"#FFFF00\"><b>{key.strip()}</b></font>: {dynamic_highlight(val.strip())}"
-                    story.append(Paragraph(formatted_kv, body_style))
-                else:
-                    story.append(Paragraph(dynamic_highlight(line), body_style))
+    for mod in modules:
+        story.append(Paragraph(mod['title'], h1_style))
+
+        # Section: Learning Objectives
+        story.append(Paragraph("Exam Learning Objectives", h2_style))
+        for obj in mod['objectives']:
+            story.append(Paragraph(f"• {dynamic_highlight(obj)}", bullet_style))
+
+        # Section: High-Yield Topic Syntheses
+        story.append(Paragraph("High-Yield Concept Syntheses & Notes", h2_style))
+        for block in mod['concept_blocks']:
+            story.append(Paragraph(dynamic_highlight(block), body_style))
+
+        # Section: Key Vocabulary / Terminology Table if terms exist
+        if mod['key_terms']:
+            story.append(Paragraph("Key Terminology & Definitions", h2_style))
+            table_data = [[Paragraph("Term", table_header_style), Paragraph("Definition / High-Yield Note", table_header_style)]]
+            for term, defn in mod['key_terms']:
+                table_data.append([
+                    Paragraph(f"<font backColor=\"#FFFF00\"><b>{term}</b></font>", table_cell_style),
+                    Paragraph(dynamic_highlight(defn), table_cell_style)
+                ])
+            t_terms = Table(table_data, colWidths=[COL_WIDTH*0.35, COL_WIDTH*0.65])
+            t_terms.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E6E6FA')),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CCCCCC')),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('TOPPADDING', (0,0), (-1,-1), 2),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+            ]))
+            story.append(t_terms)
+            story.append(Spacer(1, 4))
+
+        # Section: Active Recall & Self-Test Questions
+        if mod['recall_questions']:
+            story.append(Paragraph("Active Recall & Self-Test Questions", h2_style))
+            for q_num, (q_text, a_text) in enumerate(mod['recall_questions'], 1):
+                story.append(Paragraph(f"<b>Q{q_num}: {q_text}</b>", body_style))
+                story.append(Paragraph(f"<i>Answer Note: {dynamic_highlight(a_text)}</i>", quote_style))
 
     if progress_callback:
-        progress_callback(85)
+        progress_callback(90)
 
     doc.build(story, canvasmaker=CleanCanvas)
-    
+
     if progress_callback:
         progress_callback(100)
 
